@@ -147,7 +147,7 @@ const Home = () => {
   const fetchMemories = async () => {
     try {
       const memoriesRef = collection(db, "appPosts");
-      const q = query(memoriesRef, orderBy("date", "desc"));
+      const q = query(memoriesRef, orderBy("createdAt", "desc"));
       const querySnapshot = await getDocs(q);
 
       const fetchedMemories = querySnapshot.docs.map((doc) => ({
@@ -209,17 +209,14 @@ const Home = () => {
         {memories.length === 0 ? (
           <Text style={styles.noMemories}>No Post found.</Text>
         ) : (
-          memories.map((memory, index) => (
+          memories.map((memory) => (
             <MemoryCard
-              key={index}
-              imageSource={memory.imageSource || null}
-              date={new Date(memory?.date).toLocaleDateString()}
-              title={memory?.title}
-              authName={memory?.createdBy}
-              text={memory?.description}
-              memoryId={memory?.id}
-              userId={memory?.userId}
-              authorId={memory?.userId}
+              key={memory.id}
+              data={memory}
+              onLikePress={() => handleLike(memory?.id)}
+              onCommentPress={(newComment) =>
+                handleComment(memory.id, newComment, auth.currentUser.uid)
+              }
             />
           ))
         )}

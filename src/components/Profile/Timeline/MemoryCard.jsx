@@ -1,95 +1,90 @@
-import React from "react";
-import { View, Text, Image, StyleSheet, TouchableOpacity } from "react-native";
+import React, { useState } from "react";
+import { View, Text, Image, StyleSheet, TouchableOpacity, TextInput, FlatList } from "react-native";
 import CustomButton from "../../UIComponents/CustomButton/CustomButton";
 import { theme } from "../../../util/theme";
 import { useNavigation } from "@react-navigation/native";
 import { useSelector } from "react-redux";
-import { FontAwesome, MaterialIcons } from "@expo/vector-icons";
+import { FontAwesome } from "@expo/vector-icons";
+import UserDp from "../../UIComponents/UserDp/UserDP";
 
-export default function MemoryCard({
-  imageSource,
-  title,
-  date,
-  authName,
-  text,
-  memoryId,
-  userId,
-  authorId,
-  caption,
-  likesCount = 0,
-  commentsCount = 0,
-  onLikePress,
-  onCommentPress,
-  onSharePress,
-}) {
-  const navigation = useNavigation();
-  const user = useSelector((state) => state.session.user);
-  const translation = useSelector((state) => state.session.translation);
+export default function MemoryCard({ data, onLikePress, onCommentPress }) {
+  const currentUser = useSelector((state) => state.session.user);
+  const [showCommentInput, setShowCommentInput] = useState(false);
+  const [newComment, setNewComment] = useState("");
+
+  const handleCommentSubmit = () => {
+    if (onCommentPress && newComment.trim()) {
+      onCommentPress(newComment);
+      setNewComment("");
+      setShowCommentInput(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
       <View style={styles.card}>
-        <View
-          style={{
-            justifyContent: "space-between",
-            padding: 20,
-            backgroundColor: theme.colors.white,
-            borderTopRightRadius: 10,
-            borderTopLeftRadius: 10,
-            borderBottomLeftRadius: imageSource ? 0 : 10,
-            borderBottomRightRadius: imageSource ? 0 : 10,
-          }}
-        >
-          <TouchableOpacity
-            onPress={() => navigation.navigate("ViewMemory", { memoryId: memoryId })}
-          >
-            <View>
-              <Text style={styles.date}>{date}</Text>
-              <Text style={styles.title}>{title}</Text>
-              <Text style={styles.caption}>{caption}</Text>
-            </View>
-
-            <View style={styles.editContainer}>
-              {(user?.id == userId || user?.id == authorId) && (
-                <CustomButton
-                  title={translation.GLOBAL.edit}
-                  variant="outlined"
-                  onPress={() => navigation.navigate("EditMemory", { memoryId, userId })}
-                  style={{ padding: 5 }}
-                />
-              )}
-              <Text style={styles.authName}>{authName}</Text>
-            </View>
-          </TouchableOpacity>
-
-          <View
-            style={{
-              height: 1,
-              backgroundColor: theme.colors.muted,
-              marginVertical: 20,
-            }}
-          ></View>
+        {/* Header */}
+        <View style={styles.header}>
+          <UserDp imageSource={data?.images[0]} />
+          <Text style={styles.userName}>{data?.createdBy?.name}</Text>
         </View>
 
-        {imageSource && <Image source={{ uri: imageSource }} style={styles.image} />}
+        {/* Date */}
+        <Text style={styles.date}>{data?.createdAt}</Text>
+
+        {/* Caption */}
+        <Text style={styles.caption}>{data?.caption}</Text>
+
+        {/* Image */}
+        {data?.images && <Image source={{ uri: data?.images[0] }} style={styles.image} />}
 
         {/* Interaction Buttons */}
         <View style={styles.interactionContainer}>
           <TouchableOpacity onPress={onLikePress} style={styles.interactionButton}>
-            <FontAwesome name="heart" size={20} color={theme.colors.text} />
-            <Text style={styles.interactionText}>{likesCount} Likes</Text>
+            <FontAwesome
+              name="heart"
+              size={20}
+              color={data?.likes.includes(data?.userId) ? theme.colors.primary : theme.colors.text}
+            />
+            <Text style={styles.interactionText}>{data?.likes.length} Likes</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={onCommentPress} style={styles.interactionButton}>
+          <TouchableOpacity
+            onPress={() => setShowCommentInput((prev) => !prev)}
+            style={styles.interactionButton}
+          >
             <FontAwesome name="comment" size={20} color={theme.colors.text} />
-            <Text style={styles.interactionText}>{commentsCount} Comments</Text>
+            <Text style={styles.interactionText}>{data?.comments.length} Comments</Text>
           </TouchableOpacity>
-
-          {/* <TouchableOpacity onPress={onSharePress} style={styles.interactionButton}>
-            <MaterialIcons name="share" size={20} color={theme.colors.text} />
-            <Text style={styles.interactionText}>Share</Text>
-          </TouchableOpacity> */}
         </View>
+
+        {/* Comment Input */}
+        {showCommentInput && (
+          <View style={styles.commentInputContainer}>
+            <TextInput
+              style={styles.commentInput}
+              placeholder="Write a comment..."
+              value={newComment}
+              onChangeText={setNewComment}
+            />
+            <TouchableOpacity onPress={handleCommentSubmit} style={styles.submitCommentButton}>
+              <Text style={styles.submitCommentText}>Post</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Display Comments */}
+        {data?.comments.length > 0 && (
+          <View>
+            {data?.comments.map((item, index) => (
+              <View key={index} style={styles.commentItem}>
+                <Text style={styles.commentUser}>{item.name}</Text>
+                <Text style={styles.commentText}>{item.text}</Text>
+                <Text style={styles.commentDate}>{item.createdAt}</Text>
+              </View>
+            ))}
+          </View>
+        )}
       </View>
     </View>
   );
@@ -98,70 +93,96 @@ export default function MemoryCard({
 const styles = StyleSheet.create({
   container: {
     borderRadius: 10,
-    paddingVertical: 30,
+    paddingVertical: 10,
+    marginBottom: 20,
+    backgroundColor: theme.colors.light,
   },
   card: {
-    elevation: 1,
     borderRadius: 10,
-  },
-  image: {
+    overflow: "hidden",
+    elevation: 2,
     backgroundColor: theme.colors.white,
-    width: "100%",
-    height: 200,
-    objectFit: "cover",
-    borderBottomLeftRadius: 10,
-    borderBottomRightRadius: 10,
   },
-  content: {
-    justifyContent: "space-between",
-    padding: 20,
-    backgroundColor: theme.colors.white,
-    borderTopRightRadius: 10,
-    borderTopLeftRadius: 10,
-  },
-  date: {
-    fontSize: 16,
-    color: theme.colors.muted,
-    fontFamily: "Merriweather-Regular",
-  },
-  title: {
-    fontSize: 20,
-    marginVertical: 5,
-    fontFamily: "Merriweather-Bold",
-    color: theme.colors.text,
-  },
-  caption: {
-    fontSize: 18,
-    fontFamily: "Sofia-Pro-Regular",
-    color: theme.colors.text,
-  },
-  authName: {
-    fontSize: 16,
-    color: theme.colors.text,
-    fontFamily: "Sofia-Pro-Regular",
-  },
-  editContainer: {
+  header: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
+    padding: 10,
+    gap: 10,
+    backgroundColor: theme.colors.light,
+  },
+  date: {
+    fontSize: 12,
+    paddingLeft: 10,
+    color: theme.colors.muted,
+  },
+  userName: {
+    fontSize: 14,
+    color: theme.colors.text,
+    fontWeight: "bold",
+  },
+  caption: {
+    padding: 10,
+    fontSize: 16,
+    color: theme.colors.text,
+  },
+  image: {
+    width: "100%",
+    height: 200,
+    resizeMode: "cover",
   },
   interactionContainer: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    backgroundColor: theme.colors.white,
-    borderBottomLeftRadius: 10,
-    borderBottomRightRadius: 10,
+    justifyContent: "space-around",
+    paddingVertical: 10,
+    backgroundColor: theme.colors.light,
   },
   interactionButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
   },
   interactionText: {
+    marginLeft: 5,
     fontSize: 14,
-    fontFamily: "Sofia-Pro-Regular",
     color: theme.colors.text,
+  },
+  commentInputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: 10,
+    marginVertical: 5,
+  },
+  commentInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: theme.colors.muted,
+    borderRadius: 5,
+    padding: 10,
+  },
+  submitCommentButton: {
+    marginLeft: 10,
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 5,
+  },
+  submitCommentText: {
+    color: theme.colors.white,
+  },
+  commentItem: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.light,
+  },
+  commentUser: {
+    fontWeight: "bold",
+    color: theme.colors.text,
+  },
+  commentText: {
+    color: theme.colors.muted,
+  },
+  commentDate: {
+    display: "flex",
+    left: "70%",
   },
 });

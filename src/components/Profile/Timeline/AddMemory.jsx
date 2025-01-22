@@ -1,87 +1,25 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from "react-native";
-import React, { useState, useEffect } from "react";
-import UserDP from "./../../UIComponents/UserDp/UserDP";
-import InputField from "./../../UIComponents/InputField/InputField";
-import DatePicker from "../../UIComponents/DatePicker/Datepicker";
-import CustomButton from "./../../UIComponents/CustomButton/CustomButton";
-import { Ionicons } from "@expo/vector-icons";
+import { View, Text, StyleSheet, ScrollView, Image } from "react-native";
+import React, { useState } from "react";
 import * as ImagePicker from "expo-image-picker";
-import { theme } from "../../../util/theme";
-import { useSelector } from "react-redux";
-import { useApiCall } from "../../../util/useApiCall";
-import Toast from "react-native-toast-message";
-import { useNavigation } from "@react-navigation/native";
-import { getFirestore, collection, addDoc } from "firebase/firestore";
+import { getFirestore, collection, addDoc, doc, getDoc } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { auth } from "../../../../Firebase";
+import CustomButton from "../../UIComponents/CustomButton/CustomButton";
+import Toast from "react-native-toast-message";
+import InputField from "./../../UIComponents/InputField/InputField";
+import { useNavigation } from "@react-navigation/native";
+import { getAuth } from "firebase/auth";
 
-export default function AddMemory({ route }) {
-  const translation = useSelector((state) => state.session.translation);
+export default function AddPost() {
   const navigation = useNavigation();
-  const apiCall = useApiCall();
-  const db = getFirestore();
-  const storage = getStorage();
-  const profileData = route.params.profileData;
+  const [selectedImages, setSelectedImages] = useState([]);
+  const [caption, setCaption] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const [userName, setUserName] = useState("");
-  const [visibilitySetting, setVisibilitySetting] = useState("USER_SETTINGS");
-  const [selectedImage, setSelectedImage] = useState(null);
-  const [videoLink, setVideoLink] = useState("");
+  const db = getFirestore();
+  const storage = getStorage();
 
-  const [isCheckedA, setIsCheckedA] = useState(true);
-  const [isCheckedB, setIsCheckedB] = useState(false);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [isDropdownOpen2, setIsDropdownOpen2] = useState(false);
-  const [caption, setCaption] = useState("");
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-
-  const [visibleAlive, setVisibleAlive] = useState(translation.TIMELINE.VISIBILITY.public);
-  const [visibleDead, setVisibleDead] = useState(translation.TIMELINE.VISIBILITY.public);
-
-  useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
-      if (user) {
-        setIsAuthenticated(true);
-      } else {
-        setIsAuthenticated(false);
-      }
-    });
-    return unsubscribe;
-  }, []);
-
-  const toggleCheckboxA = () => {
-    setIsCheckedA(true);
-    setIsCheckedB(false);
-    setIsDropdownOpen(false);
-    setVisibilitySetting("USER_SETTINGS");
-  };
-
-  const toggleCheckboxB = () => {
-    setIsCheckedB(true);
-    setIsCheckedA(false);
-    setVisibilitySetting(translation.TIMELINE.VISIBILITY.custom);
-  };
-
-  const toggleDropdown = () => {
-    setIsDropdownOpen(!isDropdownOpen);
-  };
-
-  const selectOption = (option) => {
-    setVisibleAlive(option);
-    setIsDropdownOpen(false);
-  };
-
-  const toggleDropdown2 = () => {
-    setIsDropdownOpen2(!isDropdownOpen2);
-  };
-
-  const selectOption2 = (option) => {
-    setVisibleDead(option);
-    setIsDropdownOpen2(false);
-  };
-
-  const pickImage = async () => {
+  const pickImages = async () => {
     let permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (permissionResult.granted === false) {
       alert("Permission to access gallery is required!");
@@ -90,20 +28,49 @@ export default function AddMemory({ route }) {
 
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
+      allowsMultipleSelection: true,
       quality: 1,
     });
 
     if (!result.canceled) {
-      setSelectedImage({ uri: result.assets[0].uri });
+      const imageUris = result.assets.map((asset) => ({ uri: asset.uri }));
+      setSelectedImages((prevImages) => [...prevImages, ...imageUris]);
     }
   };
 
-  const handleSave = async () => {
-    if (!isAuthenticated) {
+  const uploadImages = async () => {
+    const uploadedImageUrls = [];
+    for (let image of selectedImages) {
+      try {
+        const response = await fetch(image.uri);
+        const blob = await response.blob();
+        const imageRef = ref(storage, `app/${Date.now()}-${Math.random()}`);
+        await uploadBytes(imageRef, blob);
+        const downloadUrl = await getDownloadURL(imageRef);
+        uploadedImageUrls.push(downloadUrl);
+      } catch (error) {
+        Toast.show({
+          type: "error",
+          text1: "Failed to upload image",
+        });
+      }
+    }
+    return uploadedImageUrls;
+  };
+
+  const handleSavePost = async () => {
+    if (!caption || selectedImages.length === 0) {
       Toast.show({
         type: "error",
-        text1: "User not authenticated!",
+        text1: "Please add caption and select images.",
+      });
+      return;
+    }
+
+    if (!caption.trim()) {
+      Toast.show({
+        type: "error",
+        text1: "Caption cannot be empty.",
       });
       return;
     }
@@ -112,305 +79,126 @@ export default function AddMemory({ route }) {
 
     try {
       const currentUser = auth.currentUser;
+      const userId = currentUser?.uid;
+
       if (!currentUser) {
         Toast.show({
           type: "error",
           text1: "User not authenticated!",
         });
-        setLoading(false);
+        return;
+      }
+      const userRef = doc(db, "appUsers", userId);
+      const userDoc = await getDoc(userRef);
+
+      if (!userDoc.exists()) {
+        Toast.show({
+          type: "error",
+          text1: "User data not found!",
+        });
         return;
       }
 
-      let imageUrl = null;
+      const userName = userDoc.data().name || "Anonymous";
+      const imageUrls = await uploadImages();
 
-      if (selectedImage) {
-        const response = await fetch(selectedImage.uri);
-        const blob = await response.blob();
-        const imageRef = ref(storage, `app/${currentUser.uid} - ${new Date().toISOString()}`);
-
-        await uploadBytes(imageRef, blob);
-
-        imageUrl = await getDownloadURL(imageRef);
-      }
-
-      const memoryData = {
+      const postData = {
         userId: currentUser.uid,
-        caption: caption,
+        createdBy: {
+          name: userName || "Anonymous",
+          uid: currentUser.uid,
+        },
+        caption,
         createdAt: new Date().toISOString(),
-        imageSource: imageUrl,
+        images: imageUrls,
         likes: [],
         comments: [],
       };
 
-      const memoryDocRef = collection(db, "appPosts");
-      await addDoc(memoryDocRef, memoryData);
+      const postRef = collection(db, "appPosts");
+      await addDoc(postRef, postData);
 
       Toast.show({
         type: "success",
-        text1: "Memory created successfully!",
+        text1: "Post created successfully!",
       });
 
-      navigation.goBack();
+      setCaption("");
+      setSelectedImages([]);
     } catch (error) {
-      console.error("Error creating memory:", error);
       Toast.show({
         type: "error",
-        text1: "Failed to create memory. Please try again.",
+        text1: "Failed to create post. Please try again.",
       });
     } finally {
       setLoading(false);
     }
+    navigation.goBack();
   };
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>New Post</Text>
-      <View style={styles.dpContainer}>
-        <UserDP
-          imageSource={
-            profileData?.avatarPath
-              ? `https://theafternet.com/images/avatars/${profileData.avatarPath}`
-              : profileData?.avatarUrl
-          }
-        />
-        <Text style={styles.dpText}>{profileData?.fullName}</Text>
-      </View>
-      <InputField
-        label="User Name"
-        value={userName}
-        onChangeText={(text) => {
-          setUserName(text);
-        }}
-      />
+      <Text style={styles.title}>Create New Post</Text>
 
+      {/* Caption Input */}
       <InputField
-        label="ADD CAPTION"
+        label="Caption"
         value={caption}
-        onChangeText={(text) => {
-          setCaption(text);
-        }}
+        onChangeText={(text) => setCaption(text)}
+        multiline={true}
+        numberOfLines={5}
       />
 
+      {/* Image Picker */}
       <View style={styles.buttonContainer}>
-        <Text style={styles.buttonText}>Selects Photos & videos</Text>
-        <CustomButton
-          title="Select"
-          variant="outlined"
-          style={{ fontSize: 10, padding: 5, borderRadius: 5 }}
-          onPress={pickImage}
-        />
+        <Text style={styles.buttonText}>Select Photos</Text>
+        <CustomButton title="Pick Images" variant="outlined" onPress={pickImages} />
       </View>
 
-      {selectedImage && (
-        <View style={styles.imageContainer}>
-          <Image source={selectedImage} style={styles.image} />
-        </View>
+      {/* Selected Images Preview */}
+      {selectedImages.length > 0 && (
+        <ScrollView horizontal style={styles.imagePreviewContainer}>
+          {selectedImages.map((image, index) => (
+            <Image key={index} source={image} style={styles.imagePreview} />
+          ))}
+        </ScrollView>
       )}
 
-      <View style={styles.checkboxContainer}>
-        <Text style={styles.checkboxTitle}>{translation.TIMELINE.VISIBILITY.manage}</Text>
-        <View style={styles.checkboxOption}>
-          <TouchableOpacity
-            style={[styles.checkbox, isCheckedA && { backgroundColor: theme.colors.primary }]}
-            onPress={toggleCheckboxA}
-          />
-          <Text>{translation.TIMELINE.VISIBILITY.profile}</Text>
-        </View>
-
-        <View style={styles.checkboxOption}>
-          <TouchableOpacity
-            style={[styles.checkbox, isCheckedB && { backgroundColor: theme.colors.primary }]}
-            onPress={toggleCheckboxB}
-          />
-          <Text>{translation.TIMELINE.VISIBILITY.custom}</Text>
-        </View>
-      </View>
-
-      <View style={{ alignItems: "flex-start" }}>
-        <Text style={styles.dropdownTitle}>{translation.TIMELINE.VISIBILITY.managealive}</Text>
-        <TouchableOpacity
-          onPress={isCheckedB ? toggleDropdown : null}
-          style={[styles.dropdownContainer, { opacity: isCheckedB ? 1 : 0.5 }]}
-          disabled={!isCheckedB}
-        >
-          <Text style={styles.selectedText}>{visibleAlive}</Text>
-          <Ionicons name={isDropdownOpen ? "chevron-up" : "chevron-down"} size={24} color="black" />
-        </TouchableOpacity>
-
-        {isDropdownOpen && (
-          <View style={styles.dropdownOptions}>
-            <TouchableOpacity
-              onPress={() => selectOption(translation.TIMELINE.VISIBILITY.nobody)}
-              style={styles.dropdownOption}
-            >
-              <Text style={styles.optionText}>{translation.TIMELINE.VISIBILITY.nobody}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => selectOption(translation.TIMELINE.VISIBILITY.friends)}
-              style={styles.dropdownOption}
-            >
-              <Text style={styles.optionText}>{translation.TIMELINE.VISIBILITY.friends}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => selectOption(translation.TIMELINE.VISIBILITY.public)}
-              style={styles.dropdownOption}
-            >
-              <Text style={styles.optionText}>{translation.TIMELINE.VISIBILITY.public}</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        <Text style={styles.dropdownTitle}>{translation.TIMELINE.VISIBILITY.managedead}</Text>
-        <TouchableOpacity
-          onPress={isCheckedB ? toggleDropdown2 : null}
-          style={[styles.dropdownContainer2, { opacity: isCheckedB ? 1 : 0.5 }]}
-          disabled={!isCheckedB}
-        >
-          <Text style={styles.selectedText}>{visibleDead}</Text>
-          <Ionicons
-            name={isDropdownOpen2 ? "chevron-up" : "chevron-down"}
-            size={24}
-            color="black"
-          />
-        </TouchableOpacity>
-
-        {isDropdownOpen2 && (
-          <View style={styles.dropdownOptions}>
-            <TouchableOpacity
-              onPress={() => selectOption2(translation.TIMELINE.VISIBILITY.friends)}
-              style={styles.dropdownOption}
-            >
-              <Text style={styles.optionText}>{translation.TIMELINE.VISIBILITY.friends}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => selectOption2(translation.TIMELINE.VISIBILITY.public)}
-              style={styles.dropdownOption}
-            >
-              <Text style={styles.optionText}>{translation.TIMELINE.VISIBILITY.public}</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
-      <CustomButton title="SAVE" style={{ marginTop: 20 }} onPress={handleSave} loading={loading} />
+      {/* Save Post Button */}
+      <CustomButton
+        title="Save Post"
+        style={{ marginTop: 20 }}
+        onPress={handleSavePost}
+        loading={loading}
+      />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    marginTop: 40,
+    flex: 1,
+    justifyContent: "center",
     padding: 20,
-    flexGrow: 1,
-    paddingBottom: 100,
+    paddingTop: 60,
   },
   title: {
-    fontSize: 18,
+    fontSize: 24,
     fontWeight: "bold",
-    marginBottom: 8,
-    textTransform: "uppercase",
-    marginVertical: 10,
-    fontFamily: "Sofia-Pro-Bold",
-  },
-  dpContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  dpText: {
-    fontSize: 18,
-    fontWeight: "400",
+    marginBottom: 20,
+    textAlign: "center",
   },
   buttonContainer: {
+    marginVertical: 10,
+  },
+  imagePreviewContainer: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingVertical: 8,
-  },
-  imageContainer: {
-    width: "100%",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  buttonText: {
-    fontSize: 16,
-    fontWeight: "500",
-  },
-  image: {
-    width: "100%",
-    height: 150,
-    borderRadius: 10,
-    resizeMode: "cover",
-  },
-  checkboxContainer: {
-    marginTop: 20,
-  },
-  checkboxTitle: {
-    fontSize: 16,
-    fontWeight: "500",
-    marginBottom: 10,
-  },
-  checkboxOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: 3,
-    gap: 10,
-  },
-  checkbox: {
-    borderRadius: 12,
-    borderWidth: 2,
-    width: 20,
-    height: 20,
-  },
-  dropdownTitle: {
-    fontSize: 16,
-    fontWeight: "500",
-    marginTop: 30,
-    marginBottom: 5,
-  },
-  dropdownContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    borderWidth: 1,
-    padding: 10,
-    borderColor: "#ccc",
-    gap: 80,
-    borderRadius: 5,
-  },
-  dropdownContainer2: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    borderWidth: 1,
-    padding: 10,
-    borderColor: "#ccc",
-    gap: 70,
-    borderRadius: 5,
-  },
-  selectedText: {
-    fontSize: 16,
-  },
-  dropdownOptions: {
     marginTop: 10,
-    borderRadius: 5,
-    borderBottomWidth: 3,
-    borderRightWidth: 3,
-    textAlign: "left",
   },
-  dropdownOption: {
-    padding: 10,
-    paddingRight: 100,
-    borderBottomWidth: 1,
-    borderBottomColor: "#ccc",
-  },
-  optionText: {
-    fontSize: 16,
-  },
-  inputRow: {
-    width: "90%",
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: 5,
-  },
-  deleteButton: {
-    marginLeft: 5,
+  imagePreview: {
+    width: 100,
+    height: 100,
+    marginRight: 10,
+    borderRadius: 10,
   },
 });

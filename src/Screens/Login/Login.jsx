@@ -14,7 +14,7 @@ import { auth } from "../../../Firebase";
 const Login = () => {
   // const translation = useSelector((state) => state.session.translation);
   const navigation = useNavigation();
-  const [email, setEmail] = useState("example0009@gmail.com");
+  const [email, setEmail] = useState("umar02@gmail.com");
   const [password, setPassword] = useState("098098098");
   const [loading, setLoading] = useState(false);
   const [emailError, setEmailError] = useState("");
