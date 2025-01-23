@@ -21,7 +21,17 @@ import { useNavigation } from "@react-navigation/native";
 import ColoredBox from "./../../components/UIComponents/ColoredBox//ColoredBox";
 import { styles } from "./styles";
 import MemoryCard from "../../components/Profile/Timeline/MemoryCard";
-import { getFirestore, collection, query, getDocs, orderBy } from "firebase/firestore";
+import {
+  getFirestore,
+  collection,
+  query,
+  getDocs,
+  orderBy,
+  doc,
+  getDoc,
+  updateDoc,
+} from "firebase/firestore";
+import { auth } from "../../../Firebase";
 
 const Home = () => {
   const translation = useSelector((state) => state.session.translation);
@@ -54,10 +64,10 @@ const Home = () => {
       const data = await result.json();
       dispatch(setUser(data));
     } catch (error) {
-      Toast.show({
-        type: "error",
-        text1: translation.ERRORS.genericerror,
-      });
+      // Toast.show({
+      //   type: "error",
+      //   text1: translation.ERRORS.genericerror,
+      // });
     }
   };
 
@@ -67,10 +77,10 @@ const Home = () => {
       const data = await result.json();
       setSuggestions(data);
     } catch (error) {
-      Toast.show({
-        type: "error",
-        text1: translation.ERRORS.genericerror,
-      });
+      // Toast.show({
+      //   type: "error",
+      //   text1: translation.ERRORS.genericerror,
+      // });
     }
   };
 
@@ -80,10 +90,10 @@ const Home = () => {
       const data = await result.json();
       setUpdates(data);
     } catch (error) {
-      Toast.show({
-        type: "error",
-        text1: translation.ERRORS.genericerror,
-      });
+      // Toast.show({
+      //   type: "error",
+      //   text1: translation.ERRORS.genericerror,
+      // });
     }
   };
 
@@ -93,10 +103,10 @@ const Home = () => {
       const data = await result.json();
       dispatch(setSummary(data));
     } catch (error) {
-      Toast.show({
-        type: "error",
-        text1: translation.ERRORS.genericerror,
-      });
+      // Toast.show({
+      //   type: "error",
+      //   text1: translation.ERRORS.genericerror,
+      // });
     }
   };
 
@@ -106,10 +116,10 @@ const Home = () => {
       const data = await result.json();
       setCuratorShip(data);
     } catch (error) {
-      Toast.show({
-        type: "error",
-        text1: translation.ERRORS.genericerror,
-      });
+      // Toast.show({
+      //   type: "error",
+      //   text1: translation.ERRORS.genericerror,
+      // });
     }
   };
 
@@ -122,16 +132,16 @@ const Home = () => {
       if (data.length > 0) {
         setUpdates((prevUpdates) => [...prevUpdates, ...data]);
       } else {
-        Toast.show({
-          type: "error",
-          text1: translation.DASHBOARD.noupdates,
-        });
+        // Toast.show({
+        //   type: "error",
+        //   text1: translation.DASHBOARD.noupdates,
+        // });
       }
     } catch (error) {
-      Toast.show({
-        type: "error",
-        text1: translation.ERRORS.genericerror,
-      });
+      // Toast.show({
+      //   type: "error",
+      //   text1: translation.ERRORS.genericerror,
+      // });
     } finally {
       setLoader(false);
     }
@@ -158,10 +168,74 @@ const Home = () => {
       setMemories(fetchedMemories);
     } catch (error) {
       console.error("Error fetching memories:", error);
-      Toast.show({
-        type: "error",
-        text1: translation.ERRORS.genericerror,
-      });
+      // Toast.show({
+      //   type: "error",
+      //   text1: translation.ERRORS.genericerror,
+      // });
+    }
+  };
+
+  const handleComment = async (postId, newComment, userId) => {
+    if (!newComment.trim()) {
+      return;
+    }
+
+    try {
+      // User name fetch karna
+      const userRef = doc(db, "appUsers", userId);
+      const userDoc = await getDoc(userRef);
+
+      let userName = "Anonymous"; // Default value agar user na mile
+      if (userDoc.exists()) {
+        userName = userDoc.data().name || "Anonymous";
+      }
+
+      const postRef = doc(db, "appPosts", postId);
+      const postSnap = await getDoc(postRef);
+
+      if (postSnap.exists()) {
+        const postData = postSnap.data();
+
+        const updatedComments = [
+          ...postData.comments,
+          { userId, name: userName, text: newComment, createdAt: new Date().toISOString() },
+        ];
+
+        await updateDoc(postRef, { comments: updatedComments });
+
+        setMemories((prevMemories) =>
+          prevMemories.map((memory) =>
+            memory.id === postId ? { ...memory, comments: updatedComments } : memory
+          )
+        );
+      }
+    } catch (error) {}
+  };
+
+  const handleLike = async (postId) => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      return;
+    }
+
+    const userId = currentUser.uid;
+
+    const postRef = doc(db, "appPosts", postId);
+    const postSnap = await getDoc(postRef);
+
+    if (postSnap.exists()) {
+      const postData = postSnap.data();
+      const updatedLikes = postData.likes.includes(userId)
+        ? postData.likes.filter((id) => id !== userId)
+        : [...postData.likes, userId];
+
+      await updateDoc(postRef, { likes: updatedLikes });
+
+      setMemories((prevMemories) =>
+        prevMemories.map((memory) =>
+          memory.id === postId ? { ...memory, likes: updatedLikes } : memory
+        )
+      );
     }
   };
 
